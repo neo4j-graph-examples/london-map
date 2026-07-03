@@ -1,0 +1,16 @@
+[project]
+name = "london-map"
+version = "0.1.0"
+description = "Build one rich London map graph (city2graph -> Neo4j). Separate from the main repo."
+requires-python = ">=3.11,<3.14"
+dependencies = [
+    "city2graph>=0.4.0",
+    "neo4j>=5.0",
+    "python-dotenv>=1.0.0",
+    "pyarrow>=15.0",
+    "requests>=2.31",
+    "pyrosm>=0.8.0",
+]
+
+[tool.uv]
+package = false
