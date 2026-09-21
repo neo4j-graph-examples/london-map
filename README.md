@@ -2,8 +2,7 @@
 
 A self-contained loader that builds **one rich, spatially-coherent, Greater-London-wide map** in
 Neo4j by combining several [city2graph](https://city2graph.net) pipelines plus OSM/Overture/ONS
-sources. It is completely separate from the repo's existing `import_data.py` / `dataset/london.json`
-and touches no other code. The single orchestrator is **`load_full.py`**.
+sources. The single orchestrator is **`load_full.py`**.
 
 ## What it builds
 
@@ -19,9 +18,10 @@ and touches no other code. The single orchestrator is **`load_full.py`**.
 | POIs | OSM (Geofabrik `.osm.pbf` via `pyrosm`) + Overture `place` | `:POI (poi_id)`, `:Place (place_key)` | `(:POI)-[:NEAR {distance_m}]->(:TransitStop)` (nearest stop), `IN_ZONE` |
 | Extra themes | Overture | `:LandUse`, `:Water`, `:Infrastructure` (`feature_id`) | `IN_ZONE` |
 
-The layers are unified by **MSOA zones**: every stop, building, street segment, junction and POI is
-spatially joined into its containing zone via `(...)-[:IN_ZONE]->(:MSOAZone)`. Wards add a second
-(administrative) geography over the same stops via `COVERS`.
+The layers are unified by **MSOA zones**: every stop, building, street segment, junction, POI,
+Overture place, and extra-theme feature is spatially joined into its containing zone via
+`(...)-[:IN_ZONE]->(:MSOAZone)`. Wards add a second (administrative) geography over the same stops
+via `COVERS`.
 
 > POI note: `:POI` (OSM) and `:Place` (Overture) are kept as **separate labels** (distinct sources/schemas,
 > not de-duplicated against each other). Query all POIs with `MATCH (n) WHERE n:POI OR n:Place`.
@@ -47,8 +47,8 @@ Edges keep their full attributes too (e.g. `CONNECTS` → `travel_time_sec`, `fr
 
 **Property types.** Scalar properties are stored with their proper Neo4j types, not as strings:
 coordinates (`lon`/`lat`, `stop_lat`/`stop_lon`) and metric/morphometric values are `Float`;
-GTFS enum/flag codes (`route_type`, `location_type`, `wheelchair_boarding`, `direction_id`,
-`exact_times`, `exception_type`, `ServiceCalendar.monday…sunday`), `Building.enclosure_index`,
+GTFS enum/flag codes (`route_type`, `location_type`, `wheelchair_boarding`, `wheelchair_accessible`,
+`direction_id`, `exact_times`, `exception_type`, `ServiceCalendar.monday…sunday`), `Building.enclosure_index`,
 and Overture `level` are `Integer`; Overture flags (`Building.is_underground`/`has_parts`,
 `Water.is_intermittent`/`is_salt`) are `Boolean`. The coercion vocabulary lives in
 `neo4j_loader.coerce_expr`; per-label specs are the `numeric` dicts in `load_full.py`. GTFS
@@ -69,45 +69,56 @@ values past `24:00:00`; service dates (`YYYYMMDD`) stay strings; WKT geometry st
   which is infeasible at ~3–4 M buildings.) Resumable per borough via `_done_<code>` markers.
 
 ## Data sources (cached under `data/`)
-- GTFS: `https://data.bus-data.dft.gov.uk/timetable/download/gtfs-file/london/` (BODS, public — TfL multimodal: bus/tube/DLR/tram/river/cable car)
-- National Rail GTFS (Overground + Elizabeth line): `https://storage.travelwhiz.app/generated-gtfs/gb-nationalrail.gtfs.zip` (NaPTAN-geocoded, CC BY 4.0)
-- Overture Maps: via `overturemaps` (per-borough bboxes for morphology/junctions; Greater-London bbox for `place`/themes)
-- MSOA 2021 boundaries: ONS Open Geography Portal (London bbox, ~1200 zones, then clipped to GLA)
-- Migration: ONS Census 2021 `odmg01ew.zip` → `ODMG01EW_MSOA.csv` (nomis)
-- Commuting: ONS Census 2021 `odwp01ew.zip` → `ODWP01EW_MSOA.csv` (nomis)
-- Wards: London Datastore `statistical-gis-boundaries-london.zip` → `London_Ward_CityMerged.shp` (625 wards)
-- POIs: OSM via a local Geofabrik `Greater London` `.osm.pbf` (`pyrosm`), all common POI categories
-  (amenity, shop, leisure, tourism, office, healthcare, man_made, public_transport, railway, sport, natural, …)
+
+Licences below are those of the **upstream datasets**. Because OSM and several Overture themes are
+ODbL, a public graph built from this pipeline is a derived database: attribute OSM/Overture and
+keep those layers share-alike under [ODbL 1.0](https://opendatacommons.org/licenses/odbl/).
+
+| Source | URL / access | Licence | Attribution (minimum) |
+|--------|--------------|---------|------------------------|
+| BODS London GTFS (bus, tube, DLR, tram, river, cable car) | https://data.bus-data.dft.gov.uk/timetable/download/gtfs-file/london/ | [UK OGL v3.0](https://www.nationalarchives.gov.uk/doc/open-government-licence/version/3/) for DfT BODS ([docs](https://data.bus-data.dft.gov.uk/guidance/requirements/): freely available, no extra click-through). TfL-originated services also fall under the [TfL Transport Data Service licence](https://tfl.gov.uk/corporate/terms-and-conditions/transport-data-service) (OGL v2.0-based, with TfL conditions). | Contains public sector information licensed under the Open Government Licence v3.0. Powered by TfL Open Data. Contains OS data © Crown copyright and database rights 2016. |
+| National Rail GTFS (Overground + Elizabeth line), NaPTAN-geocoded | https://storage.travelwhiz.app/generated-gtfs/gb-nationalrail.gtfs.zip ([TravelWhiz](https://github.com/travelwhiz-ltd/GB-Bus-Train-Metro-GTFS)) | Feed compilation: [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/). Upstream: National Rail passenger timetable [CC BY 2.0 UK](https://creativecommons.org/licenses/by/2.0/uk/) (RSP); stop locations [NaPTAN, UK OGL v3.0](https://www.data.gov.uk/dataset/naptan); shapes from OSM are [ODbL 1.0](https://www.openstreetmap.org/copyright). | TravelWhiz GTFS (CC BY 4.0). Contains information from National Rail / RSP. Contains public sector information (NaPTAN) licensed under the Open Government Licence v3.0. © OpenStreetMap contributors. |
+| Overture Maps (via `city2graph` / `overturemaps`) | per-borough bboxes for morphology/junctions; Greater-London bbox for `place` / themes | Mixed by theme ([Overture attribution](https://docs.overturemaps.org/attribution/)): **Buildings** and **Transportation** (segments, connectors) **ODbL**; **Base** (`land_use`, `water`, `infrastructure`) **ODbL**; **Places** [CDLA Permissive 2.0](https://cdla.dev/permissive-2-0/) plus [Apache 2.0](https://www.apache.org/licenses/LICENSE-2.0) for Foursquare-sourced records. | Overture Maps Foundation. © OpenStreetMap contributors (ODbL themes). Foursquare-sourced places: Copyright 2024 Foursquare Labs, Inc. (Apache 2.0). |
+| MSOA 2021 boundaries | ONS Open Geography Portal, London bbox (~1200 zones, then clipped to GLA). Service: `Middle_layer_Super_Output_Areas_December_2021_Boundaries_EW_BGC_V3` | [UK OGL v3.0](https://www.nationalarchives.gov.uk/doc/open-government-licence/version/3/) (ONS Open Geography; contains OS and ONS IPR) | Source: Office for National Statistics, licensed under the Open Government Licence v.3.0. Contains OS data © Crown copyright and database right. |
+| Census 2021 migration | https://www.nomisweb.co.uk/output/census/2021/odmg01ew.zip → `ODMG01EW_MSOA.csv` | [UK OGL v3.0](https://www.nationalarchives.gov.uk/doc/open-government-licence/version/3/) ([Nomis copyright](https://www.nomisweb.co.uk/home/copyright.asp); [ONS OD user guide](https://www.ons.gov.uk/peoplepopulationandcommunity/populationandmigration/populationestimates/methodologies/userguidetocensus2021origindestinationdataenglandandwales)) | Source: Office for National Statistics. Contains public sector information licensed under the Open Government Licence v3.0. |
+| Census 2021 commuting | https://www.nomisweb.co.uk/output/census/2021/odwp01ew.zip → `ODWP01EW_MSOA.csv` | Same as migration: [UK OGL v3.0](https://www.nationalarchives.gov.uk/doc/open-government-licence/version/3/) | Source: Office for National Statistics. Contains public sector information licensed under the Open Government Licence v3.0. |
+| 2018 London wards | London Datastore `statistical-gis-boundaries-london.zip` → `London_Ward_CityMerged.shp` (625 wards) | [UK OGL v3.0](https://www.nationalarchives.gov.uk/doc/open-government-licence/version/3/) and [OS OpenData](https://www.ordnancesurvey.co.uk/licensing/os-opendata-licensing) ([dataset](https://data.london.gov.uk/dataset/statistical-gis-boundary-files-for-london)) | Contains National Statistics data © Crown copyright and database right 2015. Contains Ordnance Survey data © Crown copyright and database right 2015. |
+| OSM POIs | Geofabrik `Greater London` `.osm.pbf` via `pyrosm` (amenity, shop, leisure, tourism, office, healthcare, historic, emergency, craft, man_made, public_transport, aeroway, railway, government, military, club, sport, natural, …) | [ODbL 1.0](https://opendatacommons.org/licenses/odbl/) ([Geofabrik](https://www.geofabrik.de/en/data/download.html); [OSM copyright](https://www.openstreetmap.org/copyright)) | © OpenStreetMap contributors |
 
 Run `uv run python download_data.py` to fetch + cache the GTFS / MSOA / migration / commuting / ward
-sources up front; Overture and the OSM `.pbf` are fetched on demand during the build and cached.
+sources up front (`--force` re-downloads); Overture and the OSM `.pbf` are fetched on demand during
+the build and cached.
 
 ## Setup
 ```bash
-cd london_map
-uv sync                         # isolated env, python 3.11+ (does not touch mcp_server)
+uv sync                         # isolated env, Python 3.11–3.13
 cp .env.local.example .env.local && $EDITOR .env.local   # set NEO4J_* for your target DB
 ```
 
 ## Run
 ```bash
-# Full overnight build + load. caffeinate keeps macOS awake for the whole job.
+# Full overnight build + load. On macOS, caffeinate keeps the machine awake.
 caffeinate -i -s uv run python load_full.py --reset 2>&1 | tee data/full_run.log
 
-# Resume after interruption (cached downloads + per-borough markers are reused):
+# After an interrupted *build*: rerun the same command. Cached downloads and
+# per-borough `_done_<code>` markers are reused; `--reset` still wipes Neo4j
+# then reloads from the staged CSVs. There is no separate resume flag.
 caffeinate -i -s uv run python load_full.py --reset
 
 # Useful flags:
 #   --skip-build        load already-staged CSVs only
 #   --skip-load         build/stage CSVs only
-#   --max-boroughs N    limit morphology/junction boroughs (testing)
-#   --only PHASES       comma list of build phases to run
+#   --max-boroughs N    limit morphology and junction boroughs (testing)
+#   --only PHASES       comma list of build phases: migration, transit,
+#                       gtfs_extras, morphology, junctions, commuting, place,
+#                       pois, themes, cross, rail
+#                       (zones + wards always run; they are cheap dependencies)
 
 # Add just the Overground + Elizabeth line layer onto an existing DB (no reset,
 # idempotent MERGE; also refreshes POI NEAR to consider rail stations):
 uv run python load_full.py --only rail
 ```
-Tip: for much faster local loading, raise Neo4j Desktop's heap/page-cache (you have the RAM) before running.
+Tip: for much faster local loading, raise Neo4j Desktop's heap/page-cache before running.
 
 ## Target: local Neo4j or AuraDB
 The same scripts load into **either a local Neo4j or a remote AuraDB**, chosen automatically from
