@@ -131,7 +131,13 @@ uv run python load_full.py --reset
 ```
 Tip: for much faster local loading, raise Neo4j Desktop's heap/page-cache before running.
 
-## Target: local Neo4j or AuraDB
 The same scripts load into either a local Neo4j or a remote AuraDB, chosen automatically from
 `NEO4J_URI`.
 Set credentials in `.env` (`NEO4J_URI`, `NEO4J_USERNAME`, `NEO4J_PASSWORD`, `NEO4J_DATABASE`).
+
+We also provide a .backup file that's a snapshot of an existing 2026.08 Neo4j DB containing the data, hosted at the public S3 bucket: `s3://gds-public-dataset/neo4j-2026-09-21T-london-map-db.backup`. You can use Neo4j's restore functionality to load this .backup into your DB.
+
+Graph schema:
+
+![Database schema](db-schema.png)
+
