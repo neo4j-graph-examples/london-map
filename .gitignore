@@ -25,6 +25,10 @@ dist/
 .mypy_cache/
 .ruff_cache/
 
+# Secrets
+.env
+.env.local
+
 # Local data (optional - uncomment if you don't want to commit these)
 cache/
 data/

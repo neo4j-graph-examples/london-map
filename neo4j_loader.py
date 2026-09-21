@@ -75,8 +75,7 @@ KEYS = {
 def get_driver():
     if not config.NEO4J_PASSWORD:
         raise SystemExit(
-            "NEO4J_PASSWORD is empty. Copy london_map/.env.local.example to "
-            "london_map/.env.local and set the local password."
+            "NEO4J_PASSWORD is empty. Copy .env.example to .env and set the password."
         )
     return GraphDatabase.driver(
         config.NEO4J_URI, auth=(config.NEO4J_USERNAME, config.NEO4J_PASSWORD)

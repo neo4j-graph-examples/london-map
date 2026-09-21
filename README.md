@@ -1,15 +1,15 @@
 # London Map (city2graph → Neo4j)
 
-A self-contained loader that builds **one rich, spatially-coherent, Greater-London-wide map** in
+A self-contained loader that builds one rich, spatially-coherent, Greater-London-wide map in
 Neo4j by combining several [city2graph](https://city2graph.net) pipelines plus OSM/Overture/ONS
-sources. The single orchestrator is **`load_full.py`**.
+sources. The script to load the data is **`load_full.py`**.
 
 ## What it builds
 
 | Layer | Source | Nodes (key) | Relationships |
 |-------|--------|-------------|---------------|
 | Transit | TfL/BODS GTFS (bus, tube, DLR, tram, river, cable car) → `travel_summary_graph` | `:TransitStop (stop_id)` | `(:TransitStop)-[:CONNECTS]->(:TransitStop)` |
-| Rail | GB National Rail GTFS, filtered to **London Overground + Elizabeth line** | (same labels: `:TransitStop`, `:Route`, `:Trip`, …) | (same: `STOPS_AT`, `ON_ROUTE`, `CONNECTS`, …) |
+| Rail | GB National Rail GTFS, filtered to London Overground + Elizabeth line | (same labels: `:TransitStop`, `:Route`, `:Trip`, …) | (same: `STOPS_AT`, `ON_ROUTE`, `CONNECTS`, …) |
 | Full timetable | GTFS (London-clipped) | `:Agency`, `:Route`, `:Trip`, `:ServiceCalendar`, `:Shape`, `:Frequency`, `:ServiceException` | `STOPS_AT`, `ON_ROUTE`, `OPERATED_BY`, `RUNS_ON`, `HAS_SHAPE`, `HAS_FREQUENCY`, `HAS_EXCEPTION` |
 | Zones + migration | ONS MSOA boundaries + Census 2021 OD migration/commuting → `od_matrix_to_graph` | `:MSOAZone (MSOA21CD)` | `(:MSOAZone)-[:MIGRATION]->(:MSOAZone)`, `(:MSOAZone)-[:COMMUTE {count}]->(:MSOAZone)` |
 | Urban form | Overture Maps → `morphological_graph` | `:Building (place_id)`, `:StreetSegment (movement_id)` | `:Building-[:ADJACENT_TO]->:Building`, `:StreetSegment-[:CONNECTED_TO]->:StreetSegment`, `:Building-[:FACES]->:StreetSegment` |
@@ -18,24 +18,24 @@ sources. The single orchestrator is **`load_full.py`**.
 | POIs | OSM (Geofabrik `.osm.pbf` via `pyrosm`) + Overture `place` | `:POI (poi_id)`, `:Place (place_key)` | `(:POI)-[:NEAR {distance_m}]->(:TransitStop)` (nearest stop), `IN_ZONE` |
 | Extra themes | Overture | `:LandUse`, `:Water`, `:Infrastructure` (`feature_id`) | `IN_ZONE` |
 
-The layers are unified by **MSOA zones**: every stop, building, street segment, junction, POI,
+The layers are unified by MSOA zones: every stop, building, street segment, junction, POI,
 Overture place, and extra-theme feature is spatially joined into its containing zone via
 `(...)-[:IN_ZONE]->(:MSOAZone)`. Wards add a second (administrative) geography over the same stops
 via `COVERS`.
 
-> POI note: `:POI` (OSM) and `:Place` (Overture) are kept as **separate labels** (distinct sources/schemas,
+> POI note: `:POI` (OSM) and `:Place` (Overture) are kept as separate labels (distinct sources/schemas,
 > not de-duplicated against each other). Query all POIs with `MATCH (n) WHERE n:POI OR n:Place`.
 
-> Rail note: London Overground + Elizabeth line are **National Rail** services (absent from the BODS
-> feed), so they come from a separate GB National Rail GTFS and merge onto the **same** transit model.
+> Rail note: London Overground + Elizabeth line are National Rail services (absent from the BODS
+> feed), so they come from a separate GB National Rail GTFS and merge onto the same transit model.
 > Their stations use NaPTAN `9100…` ids (disjoint from bus `490…`/tube `940…`); all ids are kept native
 > (verified collision-free). Find them via the agencies `Elizabeth line` and the six Overground
 > line-brands (`Liberty`, `Lioness`, `Mildmay`, `Suffragette`, `Weaver`, `Windrush`). Unlike the rest
-> of the map, the **whole lines are kept** (stations beyond Greater London — Reading, Shenfield,
+> of the map, the whole lines are kept (stations beyond Greater London — Reading, Shenfield,
 > Watford Jn, Cheshunt … — are included with coordinates + rail connections, but have no `IN_ZONE`/
 > `COVERS` since there are no MSOA zones/wards outside London).
 
-**Complete data, nothing dropped.** Every column produced by city2graph is carried onto the
+**Complete data.** Every column produced by city2graph is carried onto the
 nodes/edges verbatim. Conversions only: each geometry column → a `<name>_wkt` string (WGS84;
 e.g. `geometry_wkt`, `building_geometry_wkt`, `tessellation_geometry_wkt`, `segment_geometry_wkt`,
 `barrier_geometry_wkt`), and nested structures (`names`, `sources`, `connectors`, …) →
@@ -57,7 +57,7 @@ values past `24:00:00`; service dates (`YYYYMMDD`) stay strings; WKT geometry st
 (OGC standard, self-describing, lossless — Neo4j has no native polygon/line type). Free-text OSM
 `:POI` tags remain strings, as in OSM.
 
-### Extent
+### Map coverage
 - **Greater London only.** Transit, full timetable, MSOA zones (~1000, clipped to the GLA boundary),
   migration/commuting, wards, POIs and Overture themes all cover Greater London.
 - **All-GL buildings & streets with full morphology**, computed by tiling Greater London into its
@@ -74,7 +74,7 @@ Licences below are those of the **upstream datasets**. Because OSM and several O
 ODbL, a public graph built from this pipeline is a derived database: attribute OSM/Overture and
 keep those layers share-alike under [ODbL 1.0](https://opendatacommons.org/licenses/odbl/).
 
-| Source | URL / access | Licence | Attribution (minimum) |
+| Source | URL / access | Licence | Comment |
 |--------|--------------|---------|------------------------|
 | BODS London GTFS (bus, tube, DLR, tram, river, cable car) | https://data.bus-data.dft.gov.uk/timetable/download/gtfs-file/london/ | [UK OGL v3.0](https://www.nationalarchives.gov.uk/doc/open-government-licence/version/3/) for DfT BODS ([docs](https://data.bus-data.dft.gov.uk/guidance/requirements/): freely available, no extra click-through). TfL-originated services also fall under the [TfL Transport Data Service licence](https://tfl.gov.uk/corporate/terms-and-conditions/transport-data-service) (OGL v2.0-based, with TfL conditions). | Contains public sector information licensed under the Open Government Licence v3.0. Powered by TfL Open Data. Contains OS data © Crown copyright and database rights 2016. |
 | National Rail GTFS (Overground + Elizabeth line), NaPTAN-geocoded | https://storage.travelwhiz.app/generated-gtfs/gb-nationalrail.gtfs.zip ([TravelWhiz](https://github.com/travelwhiz-ltd/GB-Bus-Train-Metro-GTFS)) | Feed compilation: [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/). Upstream: National Rail passenger timetable [CC BY 2.0 UK](https://creativecommons.org/licenses/by/2.0/uk/) (RSP); stop locations [NaPTAN, UK OGL v3.0](https://www.data.gov.uk/dataset/naptan); shapes from OSM are [ODbL 1.0](https://www.openstreetmap.org/copyright). | TravelWhiz GTFS (CC BY 4.0). Contains information from National Rail / RSP. Contains public sector information (NaPTAN) licensed under the Open Government Licence v3.0. © OpenStreetMap contributors. |
@@ -85,25 +85,40 @@ keep those layers share-alike under [ODbL 1.0](https://opendatacommons.org/licen
 | 2018 London wards | London Datastore `statistical-gis-boundaries-london.zip` → `London_Ward_CityMerged.shp` (625 wards) | [UK OGL v3.0](https://www.nationalarchives.gov.uk/doc/open-government-licence/version/3/) and [OS OpenData](https://www.ordnancesurvey.co.uk/licensing/os-opendata-licensing) ([dataset](https://data.london.gov.uk/dataset/statistical-gis-boundary-files-for-london)) | Contains National Statistics data © Crown copyright and database right 2015. Contains Ordnance Survey data © Crown copyright and database right 2015. |
 | OSM POIs | Geofabrik `Greater London` `.osm.pbf` via `pyrosm` (amenity, shop, leisure, tourism, office, healthcare, historic, emergency, craft, man_made, public_transport, aeroway, railway, government, military, club, sport, natural, …) | [ODbL 1.0](https://opendatacommons.org/licenses/odbl/) ([Geofabrik](https://www.geofabrik.de/en/data/download.html); [OSM copyright](https://www.openstreetmap.org/copyright)) | © OpenStreetMap contributors |
 
+
+**Refer to the various data source license and comply with their requirements when using this london-map Neo4j DB.**
+
+
+## Data Download
+
 Run `uv run python download_data.py` to fetch + cache the GTFS / MSOA / migration / commuting / ward
 sources up front (`--force` re-downloads); Overture and the OSM `.pbf` are fetched on demand during
 the build and cached.
 
+## Reproducibility
+
+Rebuilding the dataset does **not** guarantee reproducibility. 
+Wards, MSOA zones, and Census 2021 migration/commuting are fixed snapshots; everything else is
+whatever the publishers are serving that day — BODS and National Rail timetables (updated ~daily),
+OSM POIs (Geofabrik, ~daily), and Overture buildings/streets/places/themes (latest monthly release,
+not pinned). Two runs therefore differ in stop lists, trip times, POIs, and building footprints.
+Reuse the same files under `data/` if you need to match a previous snapshot.
+
 ## Setup
 ```bash
-uv sync                         # isolated env, Python 3.11–3.13
-cp .env.local.example .env.local && $EDITOR .env.local   # set NEO4J_* for your target DB
+uv sync                         # Python 3.11–3.13
+cp .env.example .env && $EDITOR .env   # set NEO4J_* for your target DB
 ```
 
 ## Run
 ```bash
-# Full overnight build + load. On macOS, caffeinate keeps the machine awake.
-caffeinate -i -s uv run python load_full.py --reset 2>&1 | tee data/full_run.log
+# Full build + load.
+uv run python load_full.py --reset 2>&1 | tee data/full_run.log
 
 # After an interrupted *build*: rerun the same command. Cached downloads and
 # per-borough `_done_<code>` markers are reused; `--reset` still wipes Neo4j
 # then reloads from the staged CSVs. There is no separate resume flag.
-caffeinate -i -s uv run python load_full.py --reset
+uv run python load_full.py --reset
 
 # Useful flags:
 #   --skip-build        load already-staged CSVs only
@@ -113,38 +128,10 @@ caffeinate -i -s uv run python load_full.py --reset
 #                       gtfs_extras, morphology, junctions, commuting, place,
 #                       pois, themes, cross, rail
 #                       (zones + wards always run; they are cheap dependencies)
-
-# Add just the Overground + Elizabeth line layer onto an existing DB (no reset,
-# idempotent MERGE; also refreshes POI NEAR to consider rail stations):
-uv run python load_full.py --only rail
 ```
 Tip: for much faster local loading, raise Neo4j Desktop's heap/page-cache before running.
 
 ## Target: local Neo4j or AuraDB
-The same scripts load into **either a local Neo4j or a remote AuraDB**, chosen automatically from
-`NEO4J_URI` (override with `NEO4J_LOAD_MODE=local|remote`):
-- **local** (the client and server share a filesystem, e.g. Neo4j Desktop) — CSVs are staged into the
-  server's import directory and loaded with fast **server-side `LOAD CSV … CALL{} IN TRANSACTIONS`**.
-- **remote / Aura** (no filesystem access, `*.databases.neo4j.io`) — CSVs are staged locally under
-  `data/staging/` and loaded with **client-side chunked `UNWIND`** over Bolt (slower, but needs no
-  import directory or `file://` access). Same data, same types either way.
-
-Set credentials in `.env.local` (`NEO4J_URI`, `NEO4J_USERNAME`, `NEO4J_PASSWORD`, `NEO4J_DATABASE`).
-
-**Scale & loading.** Millions of nodes / tens of millions of relationships. Loading uses periodic
-commit (heap-safe, no APOC / `neo4j-admin` needed). Each build phase is fault-isolated, so one
-failing layer won't abort the run.
-
-## Files
-- `config.py` — connection, extent, source URLs, full-build tuning
-- `download_data.py` — fetch + cache raw data (GTFS, National Rail GTFS, ONS MSOA/migration/commuting, wards)
-- `build_layers.py` — shared c2g helpers (node/edge finalize → WKT/JSON, migration, wards, spatial joins)
-- `full_build.py` — all-GL CSV builders (full GTFS + extras, borough-tiled morphology & junctions,
-  pyrosm POIs, Overture place/themes, commuting, `build_rail` for Overground/Elizabeth + `build_near_all`)
-- `neo4j_loader.py` — constraints, target detection, scalar type coercion (`coerce_expr`), and the
-  dual-mode loaders (server-side `LOAD CSV` + client-side `UNWIND`)
-- `load_full.py` — **the orchestrator** (`--reset` rebuilds the complete graph; flags `--skip-build`,
-  `--skip-load`, `--max-boroughs N`, `--only PHASES`)
-
-POIs use a local OSM extract (Geofabrik `Greater London` `.osm.pbf` via `pyrosm`) — minutes, not the
-hours/rate-limits of public Overpass. (`build_pois_full` keeps an Overpass per-borough path as a fallback.)
+The same scripts load into either a local Neo4j or a remote AuraDB, chosen automatically from
+`NEO4J_URI`.
+Set credentials in `.env` (`NEO4J_URI`, `NEO4J_USERNAME`, `NEO4J_PASSWORD`, `NEO4J_DATABASE`).
